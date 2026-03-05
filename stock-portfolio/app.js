@@ -26,9 +26,6 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
 
-// Use public CORS proxies since app is on GitHub Pages
-// codetabs proxy is verified to work with Yahoo Finance without SSL/Origin errors
-const CORS_PROXY = 'https://api.codetabs.com/v1/proxy?quest=';
 const YF_BASE = 'https://query2.finance.yahoo.com/v8/finance/chart/';
 const YF_SEARCH_BASE = 'https://query2.finance.yahoo.com/v1/finance/search';
 
@@ -146,9 +143,8 @@ const YahooFinanceClient = {
     },
 
     async fetchQuote(ticker) {
-        // Use public CORS proxy
         const targetUrl = `${YF_BASE}${encodeURIComponent(ticker)}?interval=1d&range=2d`;
-        const r = await fetch(`${CORS_PROXY}${encodeURIComponent(targetUrl)}`, {
+        const r = await fetch(targetUrl, {
             signal: AbortSignal.timeout(10000)
         });
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
@@ -177,7 +173,7 @@ const YahooFinanceClient = {
 
         try {
             const targetUrl = `${YF_SEARCH_BASE}?q=${encodeURIComponent(query)}&newsCount=0&enableFuzzyQuery=false&enableCb=false`;
-            const r = await fetch(`${CORS_PROXY}${encodeURIComponent(targetUrl)}`, {
+            const r = await fetch(targetUrl, {
                 signal: AbortSignal.timeout(5000)
             });
             if (r.ok) {
@@ -280,8 +276,7 @@ const NewsFetcher = {
 
             const rssUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=en-IN&gl=IN&ceid=IN:en`;
 
-            // Use public CORS proxy
-            const proxyUrls = [`${CORS_PROXY}${encodeURIComponent(rssUrl)}`];
+            const proxyUrls = [rssUrl];
 
             let xmlText = null;
             for (const proxyUrl of proxyUrls) {
