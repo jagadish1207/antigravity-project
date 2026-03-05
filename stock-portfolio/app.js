@@ -1201,6 +1201,47 @@ const App = {
     },
 
     // ─── TICKER SEARCH (stocks) or MF SEARCH ───
+    handleSuggestionKeydown(e, dropdownId) {
+        const dropdown = el(dropdownId);
+        if (!dropdown || dropdown.classList.contains('hidden')) return;
+
+        const items = Array.from(dropdown.querySelectorAll('.suggestion-item'));
+        if (!items.length) return;
+
+        let activeIdx = items.findIndex(item => item.classList.contains('active'));
+
+        if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            activeIdx = activeIdx < items.length - 1 ? activeIdx + 1 : 0;
+            this._updateSuggestionSelection(items, activeIdx, dropdown);
+        } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            activeIdx = activeIdx > 0 ? activeIdx - 1 : items.length - 1;
+            this._updateSuggestionSelection(items, activeIdx, dropdown);
+        } else if (e.key === 'Enter' && activeIdx >= 0) {
+            e.preventDefault();
+            items[activeIdx].click();
+        }
+    },
+
+    _updateSuggestionSelection(items, activeIdx, dropdown) {
+        items.forEach((item, idx) => {
+            if (idx === activeIdx) {
+                item.classList.add('active');
+                // Ensure visible
+                const itemTop = item.offsetTop;
+                const itemBottom = itemTop + item.offsetHeight;
+                if (itemTop < dropdown.scrollTop) {
+                    dropdown.scrollTop = itemTop;
+                } else if (itemBottom > dropdown.scrollTop + dropdown.clientHeight) {
+                    dropdown.scrollTop = itemBottom - dropdown.clientHeight;
+                }
+            } else {
+                item.classList.remove('active');
+            }
+        });
+    },
+
     handleTickerSearch() {
         clearTimeout(this.searchTimeout);
         const query = el('tickerInput').value.trim();

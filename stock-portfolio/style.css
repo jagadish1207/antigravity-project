@@ -346,7 +346,8 @@ input[type=number] {
   font-size: 0.875rem;
 }
 
-.suggestion-item:hover {
+.suggestion-item:hover,
+.suggestion-item.active {
   background: var(--bg-card-hover);
 }
 
