@@ -27,8 +27,9 @@ firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
 
 // Use public CORS proxies since app is on GitHub Pages
-const CORS_PROXY = 'https://api.allorigins.win/raw?url=';
-const YF_BASE = 'https://query1.finance.yahoo.com/v8/finance/chart/';
+// allorigins had issues, using corsproxy.io instead as it's more reliable
+const CORS_PROXY = 'https://corsproxy.io/?url=';
+const YF_BASE = 'https://query2.finance.yahoo.com/v8/finance/chart/';
 const YF_SEARCH_BASE = 'https://query2.finance.yahoo.com/v1/finance/search';
 
 const MF_BASE = 'https://api.mfapi.in/mf';
