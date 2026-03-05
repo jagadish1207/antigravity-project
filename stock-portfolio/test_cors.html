@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html>
+<body>
+<script>
+fetch('https://corsproxy.io/?https://query1.finance.yahoo.com/v8/finance/chart/RELIANCE.NS?interval=1d&range=1d')
+  .then(r => r.json())
+  .then(j => console.log("CORSPROXY_QUOTE_SUCCESS", j.chart.result[0].meta.regularMarketPrice))
+  .catch(e => console.error("CORSPROXY_QUOTE_ERROR", e));
+
+fetch('https://corsproxy.io/?https://query1.finance.yahoo.com/v1/finance/search?q=tcs&newsCount=0&enableFuzzyQuery=false&enableCb=false')
+  .then(r => r.json())
+  .then(j => console.log("CORSPROXY_SEARCH_SUCCESS", j.quotes.length))
+  .catch(e => console.error("CORSPROXY_SEARCH_ERROR", e));
+
+</script>
+</body>
+</html>

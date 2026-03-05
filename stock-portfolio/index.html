@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description"
+        content="Track your Indian stocks & mutual funds (NSE/BSE/AMFI) with live prices, P&L, and beautiful charts — free & private." />
+    <title>StockLens — India Portfolio Tracker</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
+        rel="stylesheet" />
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+    <link rel="stylesheet" href="style.css" />
+</head>
+
+<body>
+
+    <!-- ───────────────────────── ADD HOLDING MODAL ───────────────────────── -->
+    <div id="addHoldingModal" class="modal-overlay hidden">
+        <div class="modal-card">
+            <div class="modal-header">
+                <h3 id="holdingModalTitle">Add Holding</h3>
+                <button class="btn-icon close-modal" id="closeHoldingModal">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18" />
+                        <line x1="6" y1="6" x2="18" y2="18" />
+                    </svg>
+                </button>
+            </div>
+
+            <!-- Asset Type Toggle: Stock / Mutual Fund -->
+            <div class="type-toggle-group">
+                <button class="type-btn active" id="typeStock">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="22 7 13.5 15.5 8.5 10.5 2 17" />
+                        <polyline points="16 7 22 7 22 13" />
+                    </svg>
+                    Stock
+                </button>
+                <button class="type-btn" id="typeMF">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="2" y="3" width="20" height="14" rx="2" />
+                        <path d="M8 21h8" />
+                        <path d="M12 17v4" />
+                        <path d="M7 10l3 3 2-2 3 3" />
+                    </svg>
+                    Mutual Fund
+                </button>
+            </div>
+
+            <!-- Exchange Toggle (Stocks only) -->
+            <div class="exchange-toggle-group" id="exchangeRow">
+                <button class="exchange-btn active" id="exNSE">NSE</button>
+                <button class="exchange-btn" id="exBSE">BSE</button>
+            </div>
+
+            <div class="input-group">
+                <label for="tickerInput">Stock Symbol / Fund Name</label>
+                <div class="input-wrapper search-wrapper">
+                    <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" stroke-width="2">
+                        <circle cx="11" cy="11" r="8" />
+                        <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                    </svg>
+                    <input type="text" id="tickerInput" placeholder="e.g. RELIANCE, TCS, INFY" autocomplete="off"
+                        spellcheck="false" />
+                    <div id="tickerSuggestions" class="suggestions-dropdown hidden"></div>
+                </div>
+                <p class="input-hint" id="tickerHint">Type the NSE/BSE symbol (e.g. HDFCBANK, INFY, WIPRO)</p>
+            </div>
+
+            <div class="input-group">
+                <label for="sharesInput" id="sharesLabel">Number of Shares</label>
+                <input type="number" id="sharesInput" placeholder="e.g. 10" min="0.0001" step="any" />
+            </div>
+
+            <div class="input-group">
+                <label for="avgCostInput" id="avgCostLabel">Average Buy Price (₹ per share)</label>
+                <div class="input-wrapper">
+                    <span class="input-prefix">₹</span>
+                    <input type="number" id="avgCostInput" placeholder="e.g. 2500.00" min="0.01" step="any"
+                        style="padding-left: 2rem;" />
+                </div>
+            </div>
+
+            <p class="input-hint error-hint" id="holdingError"></p>
+            <div class="modal-actions">
+                <button class="btn-secondary" id="cancelHolding">Cancel</button>
+                <button class="btn-primary" id="saveHolding">Add to Portfolio</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ───────────────────────── DELETE CONFIRM MODAL ───────────────────────── -->
+    <div id="deleteModal" class="modal-overlay hidden">
+        <div class="modal-card small-card">
+            <h3>Remove Holding?</h3>
+            <p id="deleteModalMsg" class="modal-subtitle"></p>
+            <div class="modal-actions">
+                <button class="btn-secondary" id="cancelDelete">Cancel</button>
+                <button class="btn-danger" id="confirmDelete">Remove</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ───────────────────────── MAIN APP ───────────────────────── -->
+    <div id="app">
+
+        <!-- NAV -->
+        <nav class="navbar">
+            <div class="nav-brand">
+                <svg width="28" height="28" viewBox="0 0 40 40" fill="none">
+                    <circle cx="20" cy="20" r="20" fill="url(#navGrad)" />
+                    <path d="M10 26 L16 18 L22 22 L30 13" stroke="#fff" stroke-width="2.5" stroke-linecap="round"
+                        stroke-linejoin="round" />
+                    <defs>
+                        <linearGradient id="navGrad" x1="0" y1="0" x2="40" y2="40">
+                            <stop offset="0%" stop-color="#ff6b35" />
+                            <stop offset="100%" stop-color="#f7931e" />
+                        </linearGradient>
+                    </defs>
+                </svg>
+                <div>
+                    <span class="brand-name">StockLens</span>
+                    <span class="brand-sub">India</span>
+                </div>
+            </div>
+            <div class="nav-stats">
+                <div class="nav-stat">
+                    <span class="nav-stat-label" id="navValueLabel">Portfolio Value</span>
+                    <span class="nav-stat-value" id="navTotalValue">—</span>
+                </div>
+                <div class="nav-stat">
+                    <span class="nav-stat-label">Day P&amp;L</span>
+                    <span class="nav-stat-value" id="navDayPnl">—</span>
+                </div>
+            </div>
+            <div class="nav-actions">
+                <button class="btn-icon refresh-btn" id="refreshBtn" title="Refresh prices">
+                    <svg id="refreshIcon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                        stroke-width="2">
+                        <polyline points="23 4 23 10 17 10" />
+                        <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+                    </svg>
+                </button>
+                <button class="btn-primary" id="addHoldingBtn">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                        stroke-width="2.5">
+                        <line x1="12" y1="5" x2="12" y2="19" />
+                        <line x1="5" y1="12" x2="19" y2="12" />
+                    </svg>
+                    Add Holding
+                </button>
+            </div>
+        </nav>
+
+        <!-- MAIN CONTENT -->
+        <main class="main-content">
+
+            <!-- LEFT: Summary Cards + Holdings Table -->
+            <div class="content-left">
+
+                <!-- Summary Cards -->
+                <div class="stats-grid" id="statsGrid">
+                    <div class="stat-card">
+                        <div class="stat-icon blue"><svg width="18" height="18" viewBox="0 0 24 24" fill="none"
+                                stroke="currentColor" stroke-width="2">
+                                <rect x="2" y="7" width="20" height="14" rx="2" />
+                                <path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2" />
+                            </svg></div>
+                        <div class="stat-meta">
+                            <span class="stat-label" id="statLabelInvested">Total Invested</span>
+                            <span class="stat-value" id="statTotalInvested">—</span>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon purple"><svg width="18" height="18" viewBox="0 0 24 24" fill="none"
+                                stroke="currentColor" stroke-width="2">
+                                <polyline points="22 7 13.5 15.5 8.5 10.5 2 17" />
+                                <polyline points="16 7 22 7 22 13" />
+                            </svg></div>
+                        <div class="stat-meta">
+                            <span class="stat-label" id="statLabelValue">Current Value</span>
+                            <span class="stat-value" id="statCurrentValue">—</span>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon" id="totalPnlIcon"><svg width="18" height="18" viewBox="0 0 24 24"
+                                fill="none" stroke="currentColor" stroke-width="2">
+                                <line x1="12" y1="1" x2="12" y2="23" />
+                                <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
+                            </svg></div>
+                        <div class="stat-meta">
+                            <span class="stat-label" id="statLabelPnl">Total P&amp;L</span>
+                            <span class="stat-value" id="statTotalPnl">—</span>
+                            <span class="stat-badge" id="statTotalPnlPct"></span>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon teal"><svg width="18" height="18" viewBox="0 0 24 24" fill="none"
+                                stroke="currentColor" stroke-width="2">
+                                <circle cx="12" cy="12" r="10" />
+                                <polyline points="12 6 12 12 16 14" />
+                            </svg></div>
+                        <div class="stat-meta">
+                            <span class="stat-label">Holdings</span>
+                            <span class="stat-value" id="statHoldingsCount">—</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Holdings Table -->
+                <div class="table-card">
+                    <div class="table-header">
+                        <h2 class="table-title">My Holdings</h2>
+                        <div class="table-toolbar">
+                            <!-- Portfolio filter toggle -->
+                            <div class="portfolio-filter-toggle" id="portfolioFilterToggle">
+                                <button class="filter-btn active" data-filter="all" id="filterAll">All</button>
+                                <button class="filter-btn" data-filter="stock" id="filterStocks">
+                                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                        stroke-width="2.5">
+                                        <polyline points="22 7 13.5 15.5 8.5 10.5 2 17" />
+                                        <polyline points="16 7 22 7 22 13" />
+                                    </svg>
+                                    Stocks
+                                </button>
+                                <button class="filter-btn" data-filter="mf" id="filterMF">
+                                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                        stroke-width="2.5">
+                                        <rect x="2" y="3" width="20" height="14" rx="2" />
+                                        <path d="M8 21h8" />
+                                        <path d="M12 17v4" />
+                                        <path d="M7 10l3 3 2-2 3 3" />
+                                    </svg>
+                                    MF
+                                </button>
+                            </div>
+                            <button class="btn-ghost" id="toggleChartsBtn"
+                                style="padding: 0.25rem 0.5rem; font-size: 0.75rem; border: 1px solid var(--border); margin-right: 0.5rem; margin-left: 0.5rem;">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                    stroke-width="2">
+                                    <rect x="3" y="3" width="18" height="18" rx="2" />
+                                    <line x1="9" y1="3" x2="9" y2="21" />
+                                </svg>
+                                <span id="toggleChartsText">Hide Charts</span>
+                            </button>
+                            <span class="last-updated" id="lastUpdated">Not synced yet</span>
+                        </div>
+                    </div>
+
+                    <!-- Empty state -->
+                    <div id="emptyState" class="empty-state hidden">
+                        <svg width="72" height="72" viewBox="0 0 72 72" fill="none">
+                            <circle cx="36" cy="36" r="36" fill="rgba(255,107,53,0.08)" />
+                            <path d="M22 48 L30 36 L36 42 L46 28" stroke="#ff6b35" stroke-width="2.5"
+                                stroke-linecap="round" stroke-linejoin="round" />
+                            <circle cx="50" cy="24" r="4" fill="#ff6b35" opacity="0.5" />
+                        </svg>
+                        <h3>No holdings yet</h3>
+                        <p>Track your NSE/BSE stocks &amp; mutual funds. All data saved locally — private &amp; instant.
+                        </p>
+                        <div class="empty-cta-row">
+                            <button class="btn-primary" id="emptyAddStockBtn">
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                    stroke-width="2.5">
+                                    <line x1="12" y1="5" x2="12" y2="19" />
+                                    <line x1="5" y1="12" x2="19" y2="12" />
+                                </svg>
+                                Add Stock
+                            </button>
+                            <button class="btn-primary btn-mf" id="emptyAddMFBtn">
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                    stroke-width="2.5">
+                                    <line x1="12" y1="5" x2="12" y2="19" />
+                                    <line x1="5" y1="12" x2="19" y2="12" />
+                                </svg>
+                                Add Mutual Fund
+                            </button>
+                        </div>
+                        <div class="popular-chips">
+                            <p class="chips-label">Popular stocks:</p>
+                            <div class="chips-row" id="popularChips"></div>
+                        </div>
+                    </div>
+
+                    <!-- Loading state -->
+                    <div id="loadingState" class="loading-state hidden">
+                        <div class="skeleton-rows">
+                            <div class="skeleton-row"></div>
+                            <div class="skeleton-row"></div>
+                            <div class="skeleton-row"></div>
+                        </div>
+                    </div>
+
+                    <!-- Table -->
+                    <div class="table-scroll" id="tableScroll">
+                        <table id="holdingsTable" class="hidden">
+                            <thead>
+                                <tr>
+                                    <th data-sort="ticker">Symbol <span class="sort-icon">↕</span></th>
+                                    <th>Name</th>
+                                    <th data-sort="shares" class="num">Units <span class="sort-icon">↕</span></th>
+                                    <th data-sort="avgCost" class="num">Avg Cost <span class="sort-icon">↕</span></th>
+                                    <th data-sort="currentPrice" class="num">Price/NAV <span class="sort-icon">↕</span>
+                                    </th>
+                                    <th data-sort="value" class="num">Value <span class="sort-icon">↕</span></th>
+                                    <th data-sort="dayPct" class="num">Day % <span class="sort-icon">↕</span></th>
+                                    <th data-sort="pnl" class="num">P&amp;L <span class="sort-icon">↕</span></th>
+                                    <th class="num">P&amp;L %</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody id="holdingsBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- RIGHT: Chart & Breakdown -->
+            <div class="content-right">
+                <div class="chart-card">
+                    <div class="chart-card-header">
+                        <h3 class="chart-title">Allocation</h3>
+                        <!-- Chart view toggle -->
+                        <div class="chart-view-tabs">
+                            <button class="chart-view-btn active" data-view="individual" title="By holding">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                    stroke-width="2.5">
+                                    <circle cx="12" cy="12" r="10" />
+                                    <path d="M12 2v10l6 3" />
+                                </svg>
+                                Holdings
+                            </button>
+                            <button class="chart-view-btn" data-view="type" title="Stocks vs MF">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                    stroke-width="2.5">
+                                    <polyline points="22 7 13.5 15.5 8.5 10.5 2 17" />
+                                    <rect x="2" y="3" width="8" height="6" rx="1" />
+                                </svg>
+                                Type
+                            </button>
+                            <button class="chart-view-btn" data-view="sector" title="By sector">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                    stroke-width="2.5">
+                                    <path d="M3 3h7v7H3z" />
+                                    <path d="M14 3h7v7h-7z" />
+                                    <path d="M14 14h7v7h-7z" />
+                                    <path d="M3 14h7v7H3z" />
+                                </svg>
+                                Sector
+                            </button>
+                        </div>
+                    </div>
+                    <div class="chart-wrapper">
+                        <canvas id="allocationChart"></canvas>
+                        <div class="chart-center-label" id="chartCenterLabel">
+                            <span class="chart-center-value" id="chartCenterValue">—</span>
+                            <span class="chart-center-sub" id="chartCenterSub">Total Value</span>
+                        </div>
+                    </div>
+                    <div id="chartLegend" class="chart-legend"></div>
+                </div>
+                <div class="top-performers-card">
+                    <h3 class="chart-title">Top Movers Today</h3>
+                    <div id="topMovers" class="movers-list">
+                        <p class="muted-text">No data yet</p>
+                    </div>
+                </div>
+
+                <!-- Related News -->
+                <div class="top-performers-card news-card">
+                    <h3 class="chart-title">Market News</h3>
+                    <div id="newsContainer" class="news-list">
+                        <p class="muted-text">Loading latest news...</p>
+                    </div>
+                </div>
+            </div>
+
+        </main>
+
+        <!-- FOOTER -->
+        <footer class="footer">
+            <p>Stocks via <strong>Yahoo Finance</strong> · Mutual Funds via <strong>MFAPI.in</strong> · NSE, BSE &amp;
+                AMFI · All data stored <strong>locally in your browser</strong> · Not financial advice</p>
+        </footer>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+
+</html>
