@@ -27,8 +27,8 @@ firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
 
 // Use public CORS proxies since app is on GitHub Pages
-// allorigins had issues, using corsproxy.io instead as it's more reliable
-const CORS_PROXY = 'https://corsproxy.io/?url=';
+// codetabs proxy is verified to work with Yahoo Finance without SSL/Origin errors
+const CORS_PROXY = 'https://api.codetabs.com/v1/proxy?quest=';
 const YF_BASE = 'https://query2.finance.yahoo.com/v8/finance/chart/';
 const YF_SEARCH_BASE = 'https://query2.finance.yahoo.com/v1/finance/search';
 
