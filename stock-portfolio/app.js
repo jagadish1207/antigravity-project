@@ -26,11 +26,6 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
 
-// Use public CORS proxies since app is on GitHub Pages
-const CORS_PROXY = 'https://api.allorigins.win/raw?url=';
-const YF_BASE = 'https://query2.finance.yahoo.com/v8/finance/chart/';
-const YF_SEARCH_BASE = 'https://query2.finance.yahoo.com/v1/finance/search';
-
 const MF_BASE = 'https://api.mfapi.in/mf';
 
 const POPULAR_INDIAN_STOCKS = [
@@ -145,8 +140,7 @@ const YahooFinanceClient = {
     },
 
     async fetchQuote(ticker) {
-        const targetUrl = `${YF_BASE}${encodeURIComponent(ticker)}?interval=1d&range=2d`;
-        const r = await fetch(`${CORS_PROXY}${encodeURIComponent(targetUrl)}`, {
+        const r = await fetch(`/api/yahoo/quote?ticker=${encodeURIComponent(ticker)}`, {
             signal: AbortSignal.timeout(10000)
         });
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
@@ -174,8 +168,7 @@ const YahooFinanceClient = {
         ).map(s => ({ symbol: s.symbol, description: s.name, type: 'Equity' }));
 
         try {
-            const targetUrl = `${YF_SEARCH_BASE}?q=${encodeURIComponent(query)}&newsCount=0&enableFuzzyQuery=false&enableCb=false`;
-            const r = await fetch(`${CORS_PROXY}${encodeURIComponent(targetUrl)}`, {
+            const r = await fetch(`/api/yahoo/search?q=${encodeURIComponent(query)}`, {
                 signal: AbortSignal.timeout(5000)
             });
             if (r.ok) {
@@ -276,20 +269,15 @@ const NewsFetcher = {
                 query = `${companyNames.join(' OR ')} NSE BSE`;
             }
 
-            const rssUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=en-IN&gl=IN&ceid=IN:en`;
-
-            const proxyUrls = [`${CORS_PROXY}${encodeURIComponent(rssUrl)}`];
+            const apiUrl = `/api/news?q=${encodeURIComponent(query)}`;
 
             let xmlText = null;
-            for (const proxyUrl of proxyUrls) {
-                try {
-                    const r = await fetch(proxyUrl, { signal: AbortSignal.timeout(8000) });
-                    if (r.ok) {
-                        xmlText = await r.text();
-                        break;
-                    }
-                } catch { /* try next */ }
-            }
+            try {
+                const r = await fetch(apiUrl, { signal: AbortSignal.timeout(8000) });
+                if (r.ok) {
+                    xmlText = await r.text();
+                }
+            } catch { /* ignore */ }
 
             if (!xmlText) return [];
 
