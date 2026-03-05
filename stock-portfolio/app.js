@@ -26,11 +26,11 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
 
-// Local proxy endpoints (served by proxy.py on the same origin — no CORS issues)
-const PROXY_BASE = '';
-const LOCAL_YF = `${PROXY_BASE}/proxy/yf`;      // ?symbol=RELIANCE.NS
-const LOCAL_SEARCH = `${PROXY_BASE}/proxy/yfsearch`; // ?q=...
-const LOCAL_NEWS = `${PROXY_BASE}/proxy/news`;     // ?q=...
+// Use public CORS proxies since app is on GitHub Pages
+const CORS_PROXY = 'https://api.allorigins.win/raw?url=';
+const YF_BASE = 'https://query1.finance.yahoo.com/v8/finance/chart/';
+const YF_SEARCH_BASE = 'https://query2.finance.yahoo.com/v1/finance/search';
+
 const MF_BASE = 'https://api.mfapi.in/mf';
 
 const POPULAR_INDIAN_STOCKS = [
@@ -145,8 +145,9 @@ const YahooFinanceClient = {
     },
 
     async fetchQuote(ticker) {
-        // Use local proxy — no CORS issues, no third-party proxy failures
-        const r = await fetch(`${LOCAL_YF}?symbol=${encodeURIComponent(ticker)}`, {
+        // Use public CORS proxy
+        const targetUrl = `${YF_BASE}${encodeURIComponent(ticker)}?interval=1d&range=2d`;
+        const r = await fetch(`${CORS_PROXY}${encodeURIComponent(targetUrl)}`, {
             signal: AbortSignal.timeout(10000)
         });
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
@@ -174,7 +175,8 @@ const YahooFinanceClient = {
         ).map(s => ({ symbol: s.symbol, description: s.name, type: 'Equity' }));
 
         try {
-            const r = await fetch(`${LOCAL_SEARCH}?q=${encodeURIComponent(query)}`, {
+            const targetUrl = `${YF_SEARCH_BASE}?q=${encodeURIComponent(query)}&newsCount=0&enableFuzzyQuery=false&enableCb=false`;
+            const r = await fetch(`${CORS_PROXY}${encodeURIComponent(targetUrl)}`, {
                 signal: AbortSignal.timeout(5000)
             });
             if (r.ok) {
@@ -277,8 +279,8 @@ const NewsFetcher = {
 
             const rssUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=en-IN&gl=IN&ceid=IN:en`;
 
-            // Use local proxy — no CORS issues
-            const proxyUrls = [`${LOCAL_NEWS}?q=${encodeURIComponent(query)}`];
+            // Use public CORS proxy
+            const proxyUrls = [`${CORS_PROXY}${encodeURIComponent(rssUrl)}`];
 
             let xmlText = null;
             for (const proxyUrl of proxyUrls) {
