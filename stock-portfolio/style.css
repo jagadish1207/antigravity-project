@@ -662,7 +662,8 @@ input[type=number] {
   grid-template-columns: 1fr;
 }
 
-.main-content.charts-hidden .content-right {
+.main-content.charts-hidden .content-right,
+.main-content.charts-hidden .portfolio-perf-card {
   display: none;
 }
 

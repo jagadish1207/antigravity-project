@@ -486,6 +486,10 @@ const PerformanceChartManager = {
         if (!this.instance) return;
         this._lastEnriched = enrichedHoldings;
 
+        // If charts are hidden, save data but don't fetch historical history yet
+        const isHidden = document.querySelector('.main-content').classList.contains('charts-hidden');
+        if (isHidden) return;
+
         if (!enrichedHoldings.length) {
             this.instance.data.labels = [];
             this.instance.data.datasets = [];
@@ -955,7 +959,9 @@ const App = {
         this.bindEvents();
         this.renderPopularSuggestions();
 
-        if (localStorage.getItem('stocklens_charts_hidden') === 'true') {
+        // Hide charts by default unless explicitly saved as 'false'
+        const chartsHidden = localStorage.getItem('stocklens_charts_hidden') !== 'false';
+        if (chartsHidden) {
             document.querySelector('.main-content').classList.add('charts-hidden');
             el('toggleChartsText').textContent = 'Show Charts';
         }
@@ -1076,6 +1082,11 @@ const App = {
         el('toggleChartsText').textContent = isHidden ? 'Show Charts' : 'Hide Charts';
         if (!isHidden && ChartManager.instance) {
             ChartManager.instance.resize();
+        }
+        // If we just showed charts, immediately trigger a render for PerformanceChart
+        if (!isHidden && PerformanceChartManager._lastEnriched) {
+            const filtered = this._applyFilter(PerformanceChartManager._lastEnriched);
+            PerformanceChartManager.update(filtered);
         }
     },
 
