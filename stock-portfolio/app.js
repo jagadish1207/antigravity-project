@@ -89,13 +89,15 @@ const PortfolioManager = {
         }
     },
     async add(item) {
-        // item: { type:'stock'|'mf', ticker|schemeCode, shares|units, avgCost, companyName, exchange? }
+        // item: { type:'stock'|'mf', ticker|schemeCode, shares|units, avgCost, companyName, exchange?, source? }
         const holdings = await this.load();
-        const existing = holdings.find(h =>
-            item.type === 'mf'
+        const existing = holdings.find(h => {
+            const sameAsset = item.type === 'mf'
                 ? h.type === 'mf' && h.schemeCode === item.schemeCode
-                : h.type !== 'mf' && h.ticker === item.ticker.toUpperCase()
-        );
+                : h.type !== 'mf' && h.ticker === item.ticker.toUpperCase();
+            const sameSource = (h.source || 'Source 1') === (item.source || 'Source 1');
+            return sameAsset && sameSource;
+        });
 
         if (existing) {
             const totalUnits = existing.shares + item.shares;
@@ -103,7 +105,8 @@ const PortfolioManager = {
             await db.collection("holdings").doc(existing.id).update({
                 shares: totalUnits,
                 avgCost: newAvgCost,
-                companyName: item.companyName || existing.companyName
+                companyName: item.companyName || existing.companyName,
+                source: item.source || 'Source 1'
             });
         } else {
             const key = item.type === 'mf' ? item.schemeCode : item.ticker.toUpperCase();
@@ -115,14 +118,14 @@ const PortfolioManager = {
                 avgCost: item.avgCost,
                 companyName: item.companyName || key,
                 exchange: item.type === 'mf' ? 'MF' : (item.ticker.toUpperCase().endsWith('.BO') ? 'BSE' : 'NSE'),
+                source: item.source || 'Source 1'
             });
         }
     },
-    async update(id, shares, avgCost) {
-        await db.collection("holdings").doc(id).update({
-            shares,
-            avgCost
-        });
+    async update(id, shares, avgCost, source) {
+        const updateData = { shares, avgCost };
+        if (source) updateData.source = source;
+        await db.collection("holdings").doc(id).update(updateData);
     },
     async remove(id) {
         await db.collection("holdings").doc(id).delete();
@@ -581,11 +584,14 @@ const App = {
     searchTimeout: null,
     currentType: 'stock',   // 'stock' | 'mf'
     currentExchange: 'NSE',
+    currentSource: 'Source 1',
     portfolioFilter: 'all', // 'all' | 'stock' | 'mf'
+    sourceFilter: 'all',    // 'all' | 'Source 1' | 'Source 2'
     _lastEnriched: [],      // cache for re-render without re-fetch
 
     // ─── BOOTSTRAP ───
     init() {
+        show('loadingState');
         ChartManager.init();
         this.bindEvents();
         this.renderPopularSuggestions();
@@ -620,9 +626,18 @@ const App = {
         el('exNSE').addEventListener('click', () => this.setExchange('NSE'));
         el('exBSE').addEventListener('click', () => this.setExchange('BSE'));
 
+        // Source toggle (modal)
+        el('src1').addEventListener('click', () => this.setSource('Source 1'));
+        el('src2').addEventListener('click', () => this.setSource('Source 2'));
+
         // Portfolio filter toggle (All / Stocks / MF)
-        document.querySelectorAll('.filter-btn').forEach(btn => {
+        document.querySelectorAll('#portfolioFilterToggle .filter-btn').forEach(btn => {
             btn.addEventListener('click', () => this.setPortfolioFilter(btn.dataset.filter));
+        });
+
+        // Source filter toggle (All Sources / Source 1 / Source 2)
+        document.querySelectorAll('#sourceFilterToggle .filter-btn').forEach(btn => {
+            btn.addEventListener('click', () => this.setSourceFilter(btn.dataset.source));
         });
 
         // Keyboard nav in suggestions
@@ -650,14 +665,12 @@ const App = {
         });
     },
 
-    // ─── PORTFOLIO FILTER ───
+    // ─── FILTERS ───
     setPortfolioFilter(filter) {
         this.portfolioFilter = filter;
-        // Update button active states
-        document.querySelectorAll('.filter-btn').forEach(btn => {
+        document.querySelectorAll('#portfolioFilterToggle .filter-btn').forEach(btn => {
             btn.classList.toggle('active', btn.dataset.filter === filter);
         });
-        // Re-render using cached enriched data
         if (this._lastEnriched.length) {
             const filtered = this._applyFilter(this._lastEnriched);
             this.renderSummaryStats(filtered);
@@ -666,10 +679,33 @@ const App = {
         }
     },
 
+    setSourceFilter(source) {
+        this.sourceFilter = source;
+        document.querySelectorAll('#sourceFilterToggle .filter-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.source === source);
+        });
+        if (this._lastEnriched.length) {
+            const filtered = this._applyFilter(this._lastEnriched);
+            this.renderSummaryStats(filtered);
+            this.renderTable(filtered);
+            this.renderNavStats(filtered);
+        }
+    },
+
+    setSource(source) {
+        this.currentSource = source;
+        el('src1').classList.toggle('active', source === 'Source 1');
+        el('src2').classList.toggle('active', source === 'Source 2');
+    },
+
     _applyFilter(enriched) {
-        if (this.portfolioFilter === 'stock') return enriched.filter(h => h.type !== 'mf');
-        if (this.portfolioFilter === 'mf') return enriched.filter(h => h.type === 'mf');
-        return enriched;
+        return enriched.filter(h => {
+            const passType = this.portfolioFilter === 'all' ||
+                (this.portfolioFilter === 'stock' && h.type !== 'mf') ||
+                (this.portfolioFilter === 'mf' && h.type === 'mf');
+            const passSource = this.sourceFilter === 'all' || (h.source || 'Source 1') === this.sourceFilter;
+            return passType && passSource;
+        });
     },
 
     toggleCharts() {
@@ -922,6 +958,8 @@ const App = {
             ? '<span class="ex-badge mf">MF</span>'
             : (h.ticker.endsWith('.BO') ? '<span class="ex-badge bse">BSE</span>' : '<span class="ex-badge nse">NSE</span>');
 
+        const sourceBadge = `<span class="ex-badge" style="background: rgba(255,255,255,0.08); color: var(--text-secondary);">${h.source || 'Source 1'}</span>`;
+
         const priceLabel = isMF ? 'NAV' : '';
         const priceStr = h.currentPrice != null
             ? (isMF ? `<span class="nav-label">NAV</span> ${formatINR(h.currentPrice)}` : formatINR(h.currentPrice))
@@ -951,6 +989,7 @@ const App = {
           </div>
         </td>
         <td><span class="company-name" title="${h.companyName}">${truncate(h.companyName, 24)}</span></td>
+        <td>${sourceBadge}</td>
         <td class="num">${h.shares.toLocaleString('en-IN', { maximumFractionDigits: 4 })}</td>
         <td class="num">${formatINR(h.avgCost)}</td>
         <td class="num ${colorClass(h.dayPct)}">${priceStr}</td>
@@ -1065,6 +1104,7 @@ const App = {
         el('avgCostInput').value = '';
         el('holdingError').textContent = '';
         this.setExchange('NSE');
+        this.setSource('Source 1');
         this.setModalType(type);
         hide('tickerSuggestions');
         show('addHoldingModal');
@@ -1084,6 +1124,8 @@ const App = {
             this.currentExchange = h.ticker.endsWith('.BO') ? 'BSE' : 'NSE';
             this.setExchange(this.currentExchange);
         }
+
+        this.setSource(h.source || 'Source 1');
 
         el('tickerInput').value = h.type === 'mf' ? h.companyName : displayTicker(h.ticker);
         el('tickerInput').disabled = true;
@@ -1146,9 +1188,9 @@ const App = {
             }
 
             if (this.editingId) {
-                await PortfolioManager.update(this.editingId, shares, avgCost);
+                await PortfolioManager.update(this.editingId, shares, avgCost, this.currentSource);
             } else {
-                await PortfolioManager.add({ type: 'stock', ticker, shares, avgCost, companyName });
+                await PortfolioManager.add({ type: 'stock', ticker, shares, avgCost, companyName, source: this.currentSource });
             }
             this.closeHoldingModal();
             await this.refresh();
@@ -1170,9 +1212,9 @@ const App = {
 
         try {
             if (this.editingId) {
-                await PortfolioManager.update(this.editingId, shares, avgCost);
+                await PortfolioManager.update(this.editingId, shares, avgCost, this.currentSource);
             } else {
-                await PortfolioManager.add({ type: 'mf', schemeCode, shares, avgCost, companyName: name });
+                await PortfolioManager.add({ type: 'mf', schemeCode, shares, avgCost, companyName: name, source: this.currentSource });
             }
             this.closeHoldingModal();
             await this.refresh();

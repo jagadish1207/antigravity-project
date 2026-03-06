@@ -58,6 +58,12 @@
                 <button class="exchange-btn" id="exBSE">BSE</button>
             </div>
 
+            <!-- Demat Source Toggle -->
+            <div class="source-toggle-group" id="sourceRow">
+                <button class="source-btn active" id="src1">Source 1</button>
+                <button class="source-btn" id="src2">Source 2</button>
+            </div>
+
             <div class="input-group">
                 <label for="tickerInput">Stock Symbol / Fund Name</label>
                 <div class="input-wrapper search-wrapper">
@@ -240,6 +246,15 @@
                                     MF
                                 </button>
                             </div>
+
+                            <!-- Source filter toggle -->
+                            <div class="portfolio-filter-toggle source-filter-toggle" id="sourceFilterToggle"
+                                style="margin-left: 0.5rem;">
+                                <button class="filter-btn active" data-source="all" id="filterSourceAll">All
+                                    Sources</button>
+                                <button class="filter-btn" data-source="Source 1" id="filterSource1">Source 1</button>
+                                <button class="filter-btn" data-source="Source 2" id="filterSource2">Source 2</button>
+                            </div>
                             <button class="btn-ghost" id="toggleChartsBtn"
                                 style="padding: 0.25rem 0.5rem; font-size: 0.75rem; border: 1px solid var(--border); margin-right: 0.5rem; margin-left: 0.5rem;">
                                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -304,6 +319,7 @@
                                 <tr>
                                     <th data-sort="ticker">Symbol <span class="sort-icon">↕</span></th>
                                     <th>Name</th>
+                                    <th>Source</th>
                                     <th data-sort="shares" class="num">Units <span class="sort-icon">↕</span></th>
                                     <th data-sort="avgCost" class="num">Avg Cost <span class="sort-icon">↕</span></th>
                                     <th data-sort="currentPrice" class="num">Price/NAV <span class="sort-icon">↕</span>

@@ -474,6 +474,69 @@ input[type=number] {
   color: var(--accent-blue);
 }
 
+.exchange-toggle-group {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.exchange-btn {
+  flex: 1;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  padding: 0.5rem;
+  border-radius: var(--radius-sm);
+  font-family: var(--font);
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition);
+}
+
+.exchange-btn:hover {
+  background: var(--bg-card);
+  color: var(--text-primary);
+}
+
+.exchange-btn.active {
+  background: rgba(255, 107, 53, 0.15);
+  border-color: #ff6b35;
+  color: #ff6b35;
+}
+
+.source-toggle-group {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.source-btn {
+  flex: 1;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  padding: 0.5rem;
+  border-radius: var(--radius-sm);
+  font-family: var(--font);
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition);
+}
+
+.source-btn:hover {
+  background: var(--bg-card);
+  color: var(--text-primary);
+}
+
+.source-btn.active {
+  background: rgba(247, 147, 30, 0.15);
+  border-color: #f7931e;
+  color: #f7931e;
+}
+
+
 .btn-icon {
   display: inline-flex;
   align-items: center;
