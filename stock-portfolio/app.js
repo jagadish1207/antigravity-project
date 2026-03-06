@@ -527,37 +527,31 @@ const PerformanceChartManager = {
             const results = await Promise.all(promises);
 
             // 2. Aggregate timeline
-            // Since data points might be misaligned between different stocks/MFs, we bin by day.
-            const timelineMap = {}; // timestamp -> { portfolioValue, indexValue }
+            const isIntraday = (this.currentRange === '1d' || this.currentRange === '5d');
+            const timeSeriesMap = {};
+            const uniqueTs = new Set();
 
-            let pStartValue = 0;
-            let iStartValue = 0;
-            let firstDate = Infinity;
-
-            results.forEach(({ item, isIndex, history }) => {
+            results.forEach(({ item, isIndex, history }, idx) => {
                 if (!history || !history.length) return;
 
-                // Track the earliest timestamp to establish baseline for % comparison
-                if (history[0].t < firstDate) firstDate = history[0].t;
+                const id = isIndex ? 'INDEX' : `ASSET_${idx}`;
+                timeSeriesMap[id] = {};
 
                 history.forEach(pt => {
-                    // Start of day Unix UTC
-                    const d = new Date(pt.t * 1000);
-                    const dayTs = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()) / 1000;
-
-                    if (!timelineMap[dayTs]) timelineMap[dayTs] = { portfolio: 0, index: 0 };
-
-                    if (isIndex) {
-                        timelineMap[dayTs].index += pt.c;
-                    } else {
-                        timelineMap[dayTs].portfolio += pt.c * item.shares;
+                    let ts = pt.t;
+                    if (!isIntraday) {
+                        // Snap to start of day UTC
+                        const d = new Date(pt.t * 1000);
+                        ts = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()) / 1000;
                     }
+                    timeSeriesMap[id][ts] = pt.c;
+                    uniqueTs.add(ts);
                 });
             });
 
-            const sortedDays = Object.keys(timelineMap).map(Number).sort((a, b) => a - b);
+            const sortedTs = Array.from(uniqueTs).sort((a, b) => a - b);
 
-            if (!sortedDays.length) {
+            if (!sortedTs.length) {
                 this.instance.data.labels = [];
                 this.instance.data.datasets = [];
                 this.instance.update();
@@ -565,40 +559,57 @@ const PerformanceChartManager = {
                 return;
             }
 
-            // Fill missing days forward (if index traded but some stock didn't)
-            let lastP = sortedDays[0] ? timelineMap[sortedDays[0]].portfolio : 0;
-            let lastI = sortedDays[0] ? timelineMap[sortedDays[0]].index : 0;
+            const timelineMap = {};
+            const lastKnown = {};
 
-            for (let i = 0; i < sortedDays.length; i++) {
-                const day = sortedDays[i];
-                if (timelineMap[day].portfolio === 0 && lastP > 0) timelineMap[day].portfolio = lastP;
-                else lastP = timelineMap[day].portfolio;
+            sortedTs.forEach(ts => {
+                let pValue = 0;
+                let iValue = 0;
 
-                if (timelineMap[day].index === 0 && lastI > 0) timelineMap[day].index = lastI;
-                else lastI = timelineMap[day].index;
+                results.forEach(({ item, isIndex }, idx) => {
+                    const id = isIndex ? 'INDEX' : `ASSET_${idx}`;
+
+                    if (timeSeriesMap[id] && timeSeriesMap[id][ts] !== undefined) {
+                        lastKnown[id] = timeSeriesMap[id][ts];
+                    }
+
+                    if (isIndex) {
+                        iValue = lastKnown[id] || 0;
+                    } else {
+                        if (lastKnown[id]) {
+                            pValue += lastKnown[id] * item.shares;
+                        }
+                    }
+                });
+
+                timelineMap[ts] = { portfolio: pValue, index: iValue };
+            });
+
+            // Baseline values (first valid total)
+            let pStartValue = 0;
+            let iStartValue = 0;
+            for (let ts of sortedTs) {
+                if (pStartValue === 0 && timelineMap[ts].portfolio > 0) pStartValue = timelineMap[ts].portfolio;
+                if (iStartValue === 0 && timelineMap[ts].index > 0) iStartValue = timelineMap[ts].index;
+                if (pStartValue > 0 && iStartValue > 0) break;
             }
-
-            // Baseline values (first non-zero)
-            const getFirstNonZero = (key) => {
-                for (let d of sortedDays) if (timelineMap[d][key] > 0) return timelineMap[d][key];
-                return 1; // fallback
-            };
-            pStartValue = getFirstNonZero('portfolio');
-            iStartValue = getFirstNonZero('index');
 
             // 3. Build Chart Data Arrays
             const labels = [];
             const pData = [];
             const iData = [];
 
-            sortedDays.forEach(day => {
-                const dateObj = new Date(day * 1000);
-                // Format label based on range
+            sortedTs.forEach(ts => {
+                const dateObj = new Date(ts * 1000);
+
                 let labelStr;
-                if (this.currentRange === '1d' || this.currentRange === '5d') {
-                    // Short range = show time if we had intraday (but we binned by day for simplicity here)
-                    // If range is short but we daily-binned, we just show short date
-                    labelStr = dateObj.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+                if (isIntraday) {
+                    if (this.currentRange === '5d') {
+                        labelStr = dateObj.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) + ' ' +
+                            dateObj.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+                    } else {
+                        labelStr = dateObj.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+                    }
                 } else if (this.currentRange === '1y' || this.currentRange === '5y') {
                     labelStr = dateObj.toLocaleDateString('en-IN', { month: 'short', year: '2-digit' });
                 } else {
@@ -607,12 +618,12 @@ const PerformanceChartManager = {
 
                 labels.push(labelStr);
 
-                const currentP = timelineMap[day].portfolio;
-                const currentI = timelineMap[day].index;
+                const currentP = timelineMap[ts].portfolio;
+                const currentI = timelineMap[ts].index;
 
                 if (this.compareIndex) {
                     pData.push(((currentP - pStartValue) / pStartValue) * 100);
-                    iData.push(((currentI - iStartValue) / iStartValue) * 100);
+                    iData.push(iStartValue ? ((currentI - iStartValue) / iStartValue) * 100 : 0);
                 } else {
                     pData.push(currentP);
                 }
