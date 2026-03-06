@@ -143,24 +143,35 @@ const YahooFinanceClient = {
     },
 
     async fetchQuote(ticker) {
-        const r = await fetch(`/api/yahoo/quote?ticker=${encodeURIComponent(ticker)}`, {
-            signal: AbortSignal.timeout(10000)
-        });
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        const json = await r.json();
-        if (!json?.chart?.result?.[0]?.meta?.regularMarketPrice)
-            throw new Error(`No price data for ${ticker}`);
+        const norm = this.normaliseTicker(ticker);
+        const url = `/api/yahoo/quote?ticker=${encodeURIComponent(norm)}`;
+        const r = await fetch(url);
+        if (!r.ok) throw new Error(`Yahoo HTTP ${r.status}`);
+        const data = await r.json();
 
-        const meta = json.chart.result[0].meta;
-        const prev = meta.chartPreviousClose ?? meta.previousClose ?? meta.regularMarketPrice;
+        // Extract required fields similar to previous Finnhub logic
+        const q = data?.chart?.result?.[0]?.meta;
+        if (!q) throw new Error('No quote data');
+
+        const currentPrice = q.regularMarketPrice;
+        const previousClose = q.chartPreviousClose;
+        const d = currentPrice - previousClose;
+        const dp = (d / previousClose) * 100;
+
         return {
-            c: meta.regularMarketPrice,
-            pc: prev,
-            d: meta.regularMarketPrice - prev,
-            dp: prev ? ((meta.regularMarketPrice - prev) / prev) * 100 : 0,
-            name: meta.longName || meta.shortName || ticker,
-            currency: meta.currency || 'INR',
+            c: currentPrice,
+            d: d,
+            dp: dp,
+            name: q.shortName || ticker
         };
+    },
+
+    async fetchHistory(ticker, range = '1y') {
+        const norm = this.normaliseTicker(ticker);
+        const url = `/api/yahoo/history?ticker=${encodeURIComponent(norm)}&range=${range}`;
+        const r = await fetch(url);
+        if (!r.ok) throw new Error(`Yahoo HTTP ${r.status}`);
+        return await r.json();
     },
 
     async searchSymbol(query) {
@@ -219,9 +230,40 @@ const MFApiClient = {
             dp: navPrev ? ((navNow - navPrev) / navPrev) * 100 : 0,
             name: json.meta?.scheme_name || schemeCode,
             date: latest.date,
+            _raw: json.data // Store raw history for charting
         };
         this._cache[schemeCode] = { ts: Date.now(), data: result };
         return result;
+    },
+
+    async fetchHistory(schemeCode, range = '1y') {
+        const navData = await this.fetchNAV(schemeCode);
+        const raw = navData._raw || [];
+
+        // Parse "dd-mm-yyyy" to Unix UTC seconds
+        const history = raw.map(item => {
+            const [d, m, y] = item.date.split('-');
+            const dateObj = new Date(Date.UTC(y, m - 1, d));
+            return {
+                t: Math.floor(dateObj.getTime() / 1000),
+                c: parseFloat(item.nav)
+            };
+        }).reverse(); // MF API returns newest first, charts need oldest first
+
+        if (!history.length) return [];
+
+        // Filter by range
+        const now = history[history.length - 1].t;
+        let cutoff = 0;
+        const DAY = 86400;
+
+        if (range === '1d') cutoff = now - DAY;
+        else if (range === '5d') cutoff = now - (5 * DAY);
+        else if (range === '1mo') cutoff = now - (30 * DAY);
+        else if (range === '1y') cutoff = now - (365 * DAY);
+        else if (range === '5y') cutoff = now - (5 * 365 * DAY);
+
+        return history.filter(h => h.t >= cutoff);
     },
 
     async fetchAllNAVs(schemeCodes) {
@@ -312,7 +354,312 @@ const NewsFetcher = {
 };
 
 // ──────────────────────────────────────────────────────────────
-// CHART MANAGER
+// PERFORMANCE CHART MANAGER (Historical)
+// ──────────────────────────────────────────────────────────────
+const PerformanceChartManager = {
+    instance: null,
+    currentRange: '1y',
+    compareIndex: false,
+    _lastEnriched: [],
+
+    init() {
+        const ctx = document.getElementById('performanceChart').getContext('2d');
+
+        // Custom vertical line plugin on hover
+        const crosshairPlugin = {
+            id: 'crosshair',
+            afterDraw: chart => {
+                if (chart.tooltip?._active?.length) {
+                    const x = chart.tooltip._active[0].element.x;
+                    const yAxis = chart.scales.y;
+                    const ctx = chart.ctx;
+                    ctx.save();
+                    ctx.beginPath();
+                    ctx.moveTo(x, yAxis.top);
+                    ctx.lineTo(x, yAxis.bottom);
+                    ctx.lineWidth = 1;
+                    ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+                    ctx.setLineDash([4, 4]);
+                    ctx.stroke();
+                    ctx.restore();
+                }
+            }
+        };
+
+        this.instance = new Chart(ctx, {
+            type: 'line',
+            plugins: [crosshairPlugin],
+            data: { labels: [], datasets: [] },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: {
+                    mode: 'index',
+                    intersect: false,
+                },
+                elements: {
+                    point: { radius: 0, hitRadius: 10, hoverRadius: 4 },
+                    line: { tension: 0.2, borderWidth: 2 }
+                },
+                scales: {
+                    x: {
+                        display: true,
+                        grid: { display: false, drawBorder: false },
+                        ticks: {
+                            color: '#64748b',
+                            maxTicksLimit: 6,
+                            maxRotation: 0
+                        }
+                    },
+                    y: {
+                        display: true,
+                        position: 'right',
+                        grid: {
+                            color: 'rgba(255,255,255,0.04)',
+                            drawBorder: false,
+                        },
+                        ticks: {
+                            color: '#64748b',
+                            callback: (value) => {
+                                if (this.compareIndex) return value.toFixed(1) + '%';
+                                if (value >= 10000000) return '₹' + (value / 10000000).toFixed(2) + 'Cr';
+                                if (value >= 100000) return '₹' + (value / 100000).toFixed(2) + 'L';
+                                if (value >= 1000) return '₹' + (value / 1000).toFixed(1) + 'k';
+                                return '₹' + value;
+                            }
+                        }
+                    }
+                },
+                plugins: {
+                    legend: {
+                        display: true,
+                        position: 'top',
+                        align: 'end',
+                        labels: {
+                            usePointStyle: true,
+                            boxWidth: 8,
+                            color: '#94a3b8',
+                            font: { family: 'Inter', size: 11 }
+                        }
+                    },
+                    tooltip: {
+                        backgroundColor: 'rgba(14,22,40,0.95)',
+                        titleColor: '#f1f5f9',
+                        bodyColor: '#e2e8f0',
+                        borderColor: 'rgba(255,255,255,0.1)',
+                        borderWidth: 1,
+                        padding: 12,
+                        callbacks: {
+                            label: (ctx) => {
+                                let label = ctx.dataset.label || '';
+                                if (label) label += ': ';
+                                if (this.compareIndex) {
+                                    label += (ctx.parsed.y > 0 ? '+' : '') + ctx.parsed.y.toFixed(2) + '%';
+                                } else {
+                                    label += '₹' + ctx.parsed.y.toLocaleString('en-IN', { maximumFractionDigits: 0 });
+                                }
+                                return label;
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        // Bind UI
+        document.querySelectorAll('.timeframe-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.timeframe-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                this.currentRange = btn.dataset.range;
+                this.update(this._lastEnriched);
+            });
+        });
+
+        el('compareIndexToggle').addEventListener('change', (e) => {
+            this.compareIndex = e.target.checked;
+            this.update(this._lastEnriched);
+        });
+    },
+
+    async update(enrichedHoldings) {
+        if (!this.instance) return;
+        this._lastEnriched = enrichedHoldings;
+
+        if (!enrichedHoldings.length) {
+            this.instance.data.labels = [];
+            this.instance.data.datasets = [];
+            this.instance.update();
+            return;
+        }
+
+        show('perfChartLoading');
+
+        try {
+            // 1. Fetch history for all active holdings
+            // We use current shares to project history backward
+            const promises = enrichedHoldings.map(async h => {
+                try {
+                    let history;
+                    if (h.type === 'mf') {
+                        history = await MFApiClient.fetchHistory(h.schemeCode, this.currentRange);
+                    } else {
+                        history = await YahooFinanceClient.fetchHistory(h.ticker, this.currentRange);
+                    }
+                    return { item: h, history };
+                } catch {
+                    return { item: h, history: [] }; // Ignore failures
+                }
+            });
+
+            // Always fetch index if requested
+            if (this.compareIndex) {
+                promises.push((async () => {
+                    try {
+                        const history = await YahooFinanceClient.fetchHistory('^NSEI', this.currentRange);
+                        return { isIndex: true, history };
+                    } catch {
+                        return { isIndex: true, history: [] };
+                    }
+                })());
+            }
+
+            const results = await Promise.all(promises);
+
+            // 2. Aggregate timeline
+            // Since data points might be misaligned between different stocks/MFs, we bin by day.
+            const timelineMap = {}; // timestamp -> { portfolioValue, indexValue }
+
+            let pStartValue = 0;
+            let iStartValue = 0;
+            let firstDate = Infinity;
+
+            results.forEach(({ item, isIndex, history }) => {
+                if (!history || !history.length) return;
+
+                // Track the earliest timestamp to establish baseline for % comparison
+                if (history[0].t < firstDate) firstDate = history[0].t;
+
+                history.forEach(pt => {
+                    // Start of day Unix UTC
+                    const d = new Date(pt.t * 1000);
+                    const dayTs = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()) / 1000;
+
+                    if (!timelineMap[dayTs]) timelineMap[dayTs] = { portfolio: 0, index: 0 };
+
+                    if (isIndex) {
+                        timelineMap[dayTs].index += pt.c;
+                    } else {
+                        timelineMap[dayTs].portfolio += pt.c * item.shares;
+                    }
+                });
+            });
+
+            const sortedDays = Object.keys(timelineMap).map(Number).sort((a, b) => a - b);
+
+            if (!sortedDays.length) {
+                this.instance.data.labels = [];
+                this.instance.data.datasets = [];
+                this.instance.update();
+                hide('perfChartLoading');
+                return;
+            }
+
+            // Fill missing days forward (if index traded but some stock didn't)
+            let lastP = sortedDays[0] ? timelineMap[sortedDays[0]].portfolio : 0;
+            let lastI = sortedDays[0] ? timelineMap[sortedDays[0]].index : 0;
+
+            for (let i = 0; i < sortedDays.length; i++) {
+                const day = sortedDays[i];
+                if (timelineMap[day].portfolio === 0 && lastP > 0) timelineMap[day].portfolio = lastP;
+                else lastP = timelineMap[day].portfolio;
+
+                if (timelineMap[day].index === 0 && lastI > 0) timelineMap[day].index = lastI;
+                else lastI = timelineMap[day].index;
+            }
+
+            // Baseline values (first non-zero)
+            const getFirstNonZero = (key) => {
+                for (let d of sortedDays) if (timelineMap[d][key] > 0) return timelineMap[d][key];
+                return 1; // fallback
+            };
+            pStartValue = getFirstNonZero('portfolio');
+            iStartValue = getFirstNonZero('index');
+
+            // 3. Build Chart Data Arrays
+            const labels = [];
+            const pData = [];
+            const iData = [];
+
+            sortedDays.forEach(day => {
+                const dateObj = new Date(day * 1000);
+                // Format label based on range
+                let labelStr;
+                if (this.currentRange === '1d' || this.currentRange === '5d') {
+                    // Short range = show time if we had intraday (but we binned by day for simplicity here)
+                    // If range is short but we daily-binned, we just show short date
+                    labelStr = dateObj.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+                } else if (this.currentRange === '1y' || this.currentRange === '5y') {
+                    labelStr = dateObj.toLocaleDateString('en-IN', { month: 'short', year: '2-digit' });
+                } else {
+                    labelStr = dateObj.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+                }
+
+                labels.push(labelStr);
+
+                const currentP = timelineMap[day].portfolio;
+                const currentI = timelineMap[day].index;
+
+                if (this.compareIndex) {
+                    pData.push(((currentP - pStartValue) / pStartValue) * 100);
+                    iData.push(((currentI - iStartValue) / iStartValue) * 100);
+                } else {
+                    pData.push(currentP);
+                }
+            });
+
+            // 4. Update the chart instance
+            this.instance.data.labels = labels;
+            const datasets = [];
+
+            // Main Portfolio Line (Gradient)
+            const gradient = this.instance.ctx.createLinearGradient(0, 0, 0, 400);
+            gradient.addColorStop(0, 'rgba(255, 107, 53, 0.5)');
+            gradient.addColorStop(1, 'rgba(255, 107, 53, 0.0)');
+
+            datasets.push({
+                label: 'Portfolio',
+                data: pData,
+                borderColor: '#ff6b35',
+                backgroundColor: gradient,
+                fill: true,
+            });
+
+            // Index comparison line
+            if (this.compareIndex) {
+                datasets.push({
+                    label: 'NIFTY 50',
+                    data: iData,
+                    borderColor: '#94a3b8',
+                    backgroundColor: 'transparent',
+                    borderDash: [5, 5],
+                    fill: false,
+                });
+            }
+
+            this.instance.data.datasets = datasets;
+            this.instance.update();
+
+        } catch (err) {
+            console.error("Perf chart error", err);
+        } finally {
+            hide('perfChartLoading');
+        }
+    }
+};
+
+// ──────────────────────────────────────────────────────────────
+// CHART MANAGER (Allocation)
 // ──────────────────────────────────────────────────────────────
 // ── Sector map for Indian stocks (ticker → sector) ──
 const SECTOR_MAP = {
@@ -593,6 +940,7 @@ const App = {
     init() {
         show('loadingState');
         ChartManager.init();
+        PerformanceChartManager.init();
         this.bindEvents();
         this.renderPopularSuggestions();
 
@@ -676,6 +1024,7 @@ const App = {
             this.renderSummaryStats(filtered);
             this.renderTable(filtered);
             this.renderNavStats(filtered);
+            PerformanceChartManager.update(filtered);
         }
     },
 
@@ -689,6 +1038,7 @@ const App = {
             this.renderSummaryStats(filtered);
             this.renderTable(filtered);
             this.renderNavStats(filtered);
+            PerformanceChartManager.update(filtered);
         }
     },
 
@@ -820,6 +1170,7 @@ const App = {
         if (!holdings.length) {
             this.renderEmpty();
             this.renderNews([]); // pass empty to get general market news
+            PerformanceChartManager.update([]);
             return;
         }
         const enriched = this.enrich(holdings);
@@ -830,6 +1181,7 @@ const App = {
         this.renderNavStats(filtered);
         this.renderTopMovers(enriched); // always show all movers
         ChartManager.update(holdings, this.quotesMap);
+        PerformanceChartManager.update(filtered);
         this.renderNews(holdings);
         if (this.lastRefresh) el('lastUpdated').textContent = 'Updated ' + timeAgo(this.lastRefresh);
     },

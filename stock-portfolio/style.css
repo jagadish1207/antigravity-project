@@ -1213,6 +1213,93 @@ tbody tr:hover .row-actions {
   margin: 0 auto 1rem;
 }
 
+.perf-chart-wrapper {
+  position: relative;
+  height: 300px;
+  width: 100%;
+}
+
+@media (max-width: 1024px) {
+  .perf-chart-wrapper {
+    height: 250px;
+  }
+}
+
+.chart-loading {
+  position: absolute;
+  inset: 0;
+  background: var(--bg-card);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 5;
+  border-radius: var(--radius-sm);
+}
+
+.spinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid rgba(255, 107, 53, 0.2);
+  border-top-color: #ff6b35;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+.chart-title-group {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+}
+
+.compare-index-label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  cursor: pointer;
+  user-select: none;
+  font-weight: 500;
+  transition: color var(--transition);
+}
+
+.compare-index-label:hover {
+  color: var(--text-primary);
+}
+
+.compare-index-label input {
+  display: none;
+}
+
+.custom-checkbox {
+  width: 16px;
+  height: 16px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--transition);
+  position: relative;
+}
+
+.compare-index-label input:checked+.custom-checkbox {
+  background: linear-gradient(135deg, #ff6b35, #f7931e);
+  border-color: transparent;
+}
+
+.compare-index-label input:checked+.custom-checkbox::after {
+  content: '';
+  position: absolute;
+  width: 4px;
+  height: 8px;
+  border: solid white;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+  top: 2px;
+}
+
 .chart-center-label {
   position: absolute;
   inset: 0;

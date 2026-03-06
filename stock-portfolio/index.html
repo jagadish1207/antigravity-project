@@ -170,6 +170,34 @@
             <!-- LEFT: Summary Cards + Holdings Table -->
             <div class="content-left">
 
+                <!-- Main Performance Chart -->
+                <div class="chart-card portfolio-perf-card">
+                    <div class="chart-card-header">
+                        <div class="chart-title-group">
+                            <h3 class="chart-title">Portfolio Performance</h3>
+                            <label class="compare-index-label" title="Compare against NIFTY 50">
+                                <input type="checkbox" id="compareIndexToggle">
+                                <span class="custom-checkbox"></span>
+                                Compare Index (NIFTY 50)
+                            </label>
+                        </div>
+                        <div class="chart-view-tabs timeframe-tabs">
+                            <button class="chart-view-btn timeframe-btn" data-range="1d">1D</button>
+                            <button class="chart-view-btn timeframe-btn" data-range="5d">1W</button>
+                            <button class="chart-view-btn timeframe-btn" data-range="1mo">1M</button>
+                            <button class="chart-view-btn timeframe-btn active" data-range="1y">1Y</button>
+                            <button class="chart-view-btn timeframe-btn" data-range="5y">5Y</button>
+                        </div>
+                    </div>
+                    <div class="perf-chart-wrapper">
+                        <canvas id="performanceChart"></canvas>
+                        <!-- Loading overlay for chart -->
+                        <div id="perfChartLoading" class="chart-loading hidden">
+                            <div class="spinner"></div>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Summary Cards -->
                 <div class="stats-grid" id="statsGrid">
                     <div class="stat-card">
