@@ -1078,16 +1078,24 @@ const App = {
         this.editingId = id;
         el('holdingModalTitle').textContent = `Edit ${displayTicker(h.ticker)}`;
         el('saveHolding').textContent = 'Save Changes';
-        el('tickerInput').value = h.type === 'mf' ? h.companyName : displayTicker(h.ticker);
-        el('tickerInput').disabled = true;
-        el('sharesInput').value = h.shares;
-        el('avgCostInput').value = h.avgCost.toFixed(4);
-        el('holdingError').textContent = '';
+
         this.setModalType(h.type || 'stock');
         if (h.type !== 'mf') {
             this.currentExchange = h.ticker.endsWith('.BO') ? 'BSE' : 'NSE';
             this.setExchange(this.currentExchange);
         }
+
+        el('tickerInput').value = h.type === 'mf' ? h.companyName : displayTicker(h.ticker);
+        el('tickerInput').disabled = true;
+        if (h.type === 'mf') {
+            el('tickerInput').dataset.selectedSchemeCode = h.schemeCode;
+            el('tickerInput').dataset.selectedName = h.companyName;
+        }
+
+        el('sharesInput').value = h.shares;
+        el('avgCostInput').value = h.avgCost.toFixed(4);
+        el('holdingError').textContent = '';
+
         hide('tickerSuggestions');
         show('addHoldingModal');
         setTimeout(() => el('sharesInput').focus(), 50);
